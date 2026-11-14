@@ -1,0 +1,8 @@
+*.env
+.git-credentials
+Thumbs.db
+*.log
+YeşilÇoraplılar.bat
+*.bat
+*.stackdump
+Project1.vbw
