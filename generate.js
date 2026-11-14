@@ -1,78 +1,49 @@
-// Generate an A3 PDF and TSV link list for a publicly accessible page.
-const fs = require('fs');
-const net = require('net');
-const puppeteer = require('puppeteer-core');
+name: AsciiPro Crawler
+run-name: Crawler ${{ inputs.job_id }}
 
-function getTargetUrl() {
-  let value = (process.env.TARGET_URL || process.argv[2] || 'https://asciipro.net').trim();
-  if (!/^https?:\/\//i.test(value)) value = `https://${value}`;
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: Authorized HTTPS URL
+        required: true
+        type: string
+      job_id:
+        description: Request identifier
+        required: true
+        type: string
 
-  const url = new URL(value);
-  if (!['http:', 'https:'].includes(url.protocol)) {
-    throw new Error('Only http and https URLs are supported.');
-  }
-  if (url.username || url.password) {
-    throw new Error('URLs containing credentials are not allowed.');
-  }
-  if (url.hostname === 'localhost' || url.hostname.endsWith('.localhost') || net.isIP(url.hostname)) {
-    throw new Error('Use a public hostname, not localhost or an IP address.');
-  }
-  return url.href;
-}
+permissions:
+  contents: read
 
-(async () => {
-  const targetUrl = getTargetUrl();
-  const browser = await puppeteer.launch({
-    executablePath: process.env.CHROME_PATH || '/usr/bin/chromium-browser',
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-gpu'
-    ]
-  });
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    env:
+      REPORT_URL: ${{ inputs.url }}
+      JOB_ID: ${{ inputs.job_id }}
+      ALLOWED_HOSTS: ${{ vars.CRAWLER_ALLOWED_HOSTS }}
 
-  try {
-    const page = await browser.newPage();
-    await page.setExtraHTTPHeaders({
-      'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7'
-    });
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    const response = await page.goto(targetUrl, {
-      waitUntil: 'networkidle2',
-      timeout: 60000
-    });
-    if (!response || !response.ok()) {
-      throw new Error(`Page load failed${response ? ` with HTTP ${response.status()}` : ''}.`);
-    }
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
 
-    await page.pdf({
-      path: 'content_A3.pdf',
-      format: 'A3',
-      printBackground: true,
-      margin: { top: '1cm', bottom: '1cm', left: '1cm', right: '1cm' },
-      preferCSSPageSize: true,
-      landscape: false
-    });
+      - name: Install Puppeteer
+        run: npm install puppeteer
 
-    const links = await page.evaluate(() => Array.from(document.querySelectorAll('a'))
-      .map((anchor) => {
-        try {
-          const url = new URL(anchor.href);
-          const text = anchor.innerText.trim();
-          return text ? `${url.hostname}${url.pathname}\t${text}` : null;
-        } catch {
-          return null;
-        }
-      })
-      .filter(Boolean));
+      - name: Generate inner.html and result.json
+        run: node generate.js
 
-    fs.writeFileSync('links.tsv', `PATH\tTEXT\n${links.join('\n')}`);
-    console.log(`Captured ${targetUrl}; generated content_A3.pdf and links.tsv.`);
-  } finally {
-    await browser.close();
-  }
-})().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+      - name: Upload result
+        uses: actions/upload-artifact@v4
+        with:
+          name: result-${{ inputs.job_id }}
+          path: |
+            inner.html
+            result.json
+          retention-days: 1
