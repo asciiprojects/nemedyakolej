@@ -1,26 +1,20 @@
-name: Fetch Remote Content
-on:
-  schedule:
-    - cron: '0 */4 * * *' # Her 4 saatte bir
-  workflow_dispatch:      # Manuel tetikleme
+# .github/workflows/fetch-remote.yml
+- name: Generate PDF & HTML Dump
+  run: node generate.js
+  
+# generate.js içinde:
+const browser = await puppeteer.launch();
+const page = await browser.newPage();
+await page.goto('https://asciipro.net', { waitUntil: 'networkidle0' });
 
-jobs:
-  fetch:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      
-      - name: Setup Node & Puppeteer
-        run: |
-          npm install puppeteer-core chromium
-      
-      - name: Fetch & Save InnerHTML
-        run: node fetch.js
-      
-      - name: Commit Clean State
-        run: |
-          git config user.name "asciipro-bot"
-          git config user.email "bot@asciiprojects.com"
-          git add remote_dump.html
-          git commit -m "Auto-Fetch: $(date)" || exit 0
-          git push
+// 1. Temiz HTML Dump
+await page.content().then(c => fs.writeFileSync('remote_dump.html', c));
+
+// 2. PDF Üretimi (Orijinal JS/CSS ile Render Edilmiş Hali)
+await page.pdf({ 
+  path: 'output.pdf', 
+  format: 'A4', 
+  printBackground: true 
+});
+
+await browser.close();
