@@ -1,34 +1,55 @@
 name: Fetch Remote Content
 
 on:
-  workflow_dispatch: # Manuel tetikleme için zorunlu
+  workflow_dispatch:
+    inputs:
+      url:
+        description: Public page URL to capture (no login-required pages)
+        required: true
+        type: string
+        default: https://asciipro.net
   schedule:
     - cron: '0 */4 * * *'
+
+permissions:
+  contents: read
 
 jobs:
   fetch:
     runs-on: ubuntu-latest
-    
+    timeout-minutes: 15
+    env:
+      TARGET_URL: ${{ inputs.url || 'https://asciipro.net' }}
+
     steps:
-      - name: Checkout Repo
-        uses: actions/checkout@v3
-        
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: '18'
-          
+          node-version: '20'
+
+      - name: Setup Chrome
+        id: chrome
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
+
       - name: Install Puppeteer
-        run: npm install puppeteer-core chromium
-        
-      - name: Generate TSV & PDF
-        run: |
-          node generate.js
-          
-      - name: Commit Results
-        run: |
-          git config user.name "asciipro-bot"
-          git config user.email "bot@asciiprojects.com"
-          git add links.tsv content.pdf
-          git commit -m "Auto-Fetch: $(date)" || exit 0
-          git push
+        run: npm install --no-save puppeteer-core
+
+      - name: Generate PDF and TSV
+        env:
+          CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
+        run: node generate.js
+
+      - name: Upload generated files
+        uses: actions/upload-artifact@v4
+        with:
+          name: page-capture-${{ github.run_id }}
+          path: |
+            content_A3.pdf
+            links.tsv
+          if-no-files-found: error
+          retention-days: 7
