@@ -1,6 +1,20 @@
-# workflow_dispatch inputs: url ve job_id tanımlarınız kalsın.
-# run-name de şu biçimde olmalı:
-# run-name: Crawler ${{ inputs.job_id }}
+name: AsciiPro Crawler
+run-name: Crawler ${{ inputs.job_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: Authorized HTTPS URL
+        required: true
+        type: string
+      job_id:
+        description: Request identifier
+        required: true
+        type: string
+
+permissions:
+  contents: read
 
 jobs:
   crawl:
@@ -11,90 +25,25 @@ jobs:
       ALLOWED_HOSTS: ${{ vars.CRAWLER_ALLOWED_HOSTS }}
 
     steps:
-      - uses: actions/setup-python@v5
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
         with:
-          python-version: "3.12"
+          node-version: 20
 
-      - name: Install browser
-        run: |
-          pip install playwright
-          playwright install --with-deps chromium
+      - name: Install Puppeteer
+        run: npm install puppeteer
 
-      - name: Extract page text
-        run: |
-          python - <<'PY'
-          import asyncio
-          import json
-          import os
-          import re
-          from urllib.parse import urlsplit
+      - name: Generate inner.html and result.json
+        run: node generate.js
 
-          from playwright.async_api import async_playwright
-
-          async def main():
-              raw_url = os.environ["REPORT_URL"].strip()
-              job_id = os.environ["JOB_ID"]
-              allowed_hosts = {
-                  h.strip().lower().rstrip(".")
-                  for h in os.environ.get("ALLOWED_HOSTS", "").split(",")
-                  if h.strip()
-              }
-
-              if not re.fullmatch(r"[a-f0-9]{32}", job_id):
-                  raise SystemExit("Invalid job_id")
-
-              if not raw_url.lower().startswith(("https://", "http://")):
-                  raw_url = "https://" + raw_url
-
-              parts = urlsplit(raw_url)
-              host = (parts.hostname or "").lower().rstrip(".")
-
-              if (
-                  parts.scheme != "https"
-                  or host not in allowed_hosts
-                  or parts.username
-                  or parts.password
-                  or parts.port not in (None, 443)
-              ):
-                  raise SystemExit("URL is not allowed")
-
-              async with async_playwright() as p:
-                  browser = await p.chromium.launch()
-                  page = await browser.new_page()
-
-                  # Sayfanın başka hostlara istek göndermesini engelle.
-                  async def restrict_hosts(route):
-                      request_host = (urlsplit(route.request.url).hostname or "").lower().rstrip(".")
-                      if request_host == host:
-                          await route.continue_()
-                      else:
-                          await route.abort()
-
-                  await page.route("**/*", restrict_hosts)
-
-                  try:
-                      await page.goto(
-                          raw_url,
-                          wait_until="domcontentloaded",
-                          timeout=30000
-                      )
-                      text = await page.locator("body").inner_text(timeout=10000)
-                  finally:
-                      await browser.close()
-
-              with open("result.json", "w", encoding="utf-8") as file:
-                  json.dump(
-                      {"job_id": job_id, "url": raw_url, "outer_text": text},
-                      file,
-                      ensure_ascii=False
-                  )
-
-          asyncio.run(main())
-          PY
-
-      - name: Upload extracted text
+      - name: Upload result
         uses: actions/upload-artifact@v4
         with:
           name: result-${{ inputs.job_id }}
-          path: result.json
+          path: |
+            inner.html
+            result.json
           retention-days: 1
