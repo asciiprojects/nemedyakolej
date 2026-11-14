@@ -1,20 +1,34 @@
-# .github/workflows/fetch-remote.yml
-- name: Generate PDF & HTML Dump
-  run: node generate.js
-  
-# generate.js içinde:
-const browser = await puppeteer.launch();
-const page = await browser.newPage();
-await page.goto('https://asciipro.net', { waitUntil: 'networkidle0' });
+name: Fetch Remote Content
 
-// 1. Temiz HTML Dump
-await page.content().then(c => fs.writeFileSync('remote_dump.html', c));
+on:
+  workflow_dispatch: # Manuel tetikleme için zorunlu
+  schedule:
+    - cron: '0 */4 * * *'
 
-// 2. PDF Üretimi (Orijinal JS/CSS ile Render Edilmiş Hali)
-await page.pdf({ 
-  path: 'output.pdf', 
-  format: 'A4', 
-  printBackground: true 
-});
-
-await browser.close();
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v3
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          
+      - name: Install Puppeteer
+        run: npm install puppeteer-core chromium
+        
+      - name: Generate TSV & PDF
+        run: |
+          node generate.js
+          
+      - name: Commit Results
+        run: |
+          git config user.name "asciipro-bot"
+          git config user.email "bot@asciiprojects.com"
+          git add links.tsv content.pdf
+          git commit -m "Auto-Fetch: $(date)" || exit 0
+          git push
