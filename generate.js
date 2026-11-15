@@ -1,11 +1,31 @@
-// generate.js v5.0 - Diagnostic + outer_text Output
+// generate.js v5.1 - Timeout Tolerant + Retry Logic
 const fs = require('fs');
 const puppeteer = require('puppeteer');
 
 const TARGET_URL = process.argv[2] || 'https://asciipro.net';
 const JOB_ID = process.argv[3] || 'unknown';
+const MAX_RETRIES = 3;
+const TIMEOUT_MS = 90000; // 45s → 90s (Sunucu yavaşlığına tolerans)
 
 console.log(`[INFO] Job: ${JOB_ID} | Target: ${TARGET_URL}`);
+
+async function loadWithRetry(page, url, retries) {
+  for (let i = 1; i <= retries; i++) {
+    try {
+      console.log(`[INFO] Deneme ${i}/${retries} | Timeout: ${TIMEOUT_MS}ms`);
+      await page.goto(url, { 
+        waitUntil: 'domcontentloaded', 
+        timeout: TIMEOUT_MS 
+      });
+      console.log('[INFO] Sayfa yüklendi.');
+      return true;
+    } catch (err) {
+      console.warn(`[UYARI] Deneme ${i} başarısız: ${err.message.split('\n')[0]}`);
+      if (i === retries) throw err;
+      await new Promise(r => setTimeout(r, 5000 * i)); // Exponential backoff
+    }
+  }
+}
 
 (async () => {
   let browser;
@@ -18,17 +38,15 @@ console.log(`[INFO] Job: ${JOB_ID} | Target: ${TARGET_URL}`);
     const page = await browser.newPage();
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36');
     
-    console.log('[INFO] Sayfa yükleniyor...');
-    await page.goto(TARGET_URL, { waitUntil: 'domcontentloaded', timeout: 45000 });
+    // RETRY MEKANİZMASI İLE SAYFA YÜKLE
+    await loadWithRetry(page, TARGET_URL, MAX_RETRIES);
 
-    // 1. OUTER_TEXT ÇIKAR (Frontend için)
-    console.log('[INFO] outer_text çıkarılıyor...');
+    // outer_text
     const outerText = await page.evaluate(() => document.body?.innerText || '');
     fs.writeFileSync('outer_text.txt', outerText);
-    console.log(`[INFO] outer_text boyutu: ${outerText.length} karakter`);
+    console.log(`[INFO] outer_text: ${outerText.length} karakter`);
 
-    // 2. A3 PDF
-    console.log('[INFO] A3 PDF oluşturuluyor...');
+    // A3 PDF
     await page.pdf({
       path: 'content_A3.pdf',
       format: 'A3',
@@ -36,8 +54,7 @@ console.log(`[INFO] Job: ${JOB_ID} | Target: ${TARGET_URL}`);
       margin: { top: '1cm', bottom: '1cm', left: '1cm', right: '1cm' }
     });
 
-    // 3. TSV Links
-    console.log('[INFO] Link haritası çıkarılıyor...');
+    // TSV Links
     const links = await page.evaluate(() => 
       Array.from(document.querySelectorAll('a')).map(a => {
         try {
@@ -51,7 +68,6 @@ console.log(`[INFO] Job: ${JOB_ID} | Target: ${TARGET_URL}`);
     console.log(`[BAŞARILI] ${links.length} link | A3 PDF | outer_text hazır`);
 
   } catch (err) {
-    // HATA DETAYINI DOSYAYA YAZ (Debug için)
     const errorReport = {
       job_id: JOB_ID,
       url: TARGET_URL,
@@ -61,7 +77,6 @@ console.log(`[INFO] Job: ${JOB_ID} | Target: ${TARGET_URL}`);
     };
     fs.writeFileSync('error_report.json', JSON.stringify(errorReport, null, 2));
     console.error('[KRİTİK HATA]', err.message);
-    console.error('[STACK]', err.stack);
     process.exit(1);
   } finally {
     if (browser) await browser.close();
