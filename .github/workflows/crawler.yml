@@ -42,6 +42,6 @@ jobs:
         with:
           name: result-${{ inputs.job_id }}
           path: |
-            content_A3.pdf
-            links.tsv
+            outer_text.txt
+            error_report.json
           retention-days: 1
