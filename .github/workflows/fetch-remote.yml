@@ -1,55 +1,36 @@
 name: Fetch Remote Content
+run-name: Crawler ${{ inputs.job_id }}  # ← BU SATIR ZORUNLU!
 
 on:
   workflow_dispatch:
     inputs:
       url:
-        description: Public page URL to capture (no login-required pages)
+        description: 'Hedef URL'
         required: true
-        type: string
-        default: https://asciipro.net
-  schedule:
-    - cron: '0 */4 * * *'
-
-permissions:
-  contents: read
+      job_id:
+        description: 'Job ID'
+        required: true
 
 jobs:
   fetch:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    env:
-      TARGET_URL: ${{ inputs.url || 'https://asciipro.net' }}
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
-
-      - name: Setup Chrome
-        id: chrome
-        uses: browser-actions/setup-chrome@v1
-        with:
-          chrome-version: stable
-
-      - name: Install Puppeteer
-        run: npm install --no-save puppeteer-core
-
-      - name: Generate PDF and TSV
-        env:
-          CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
-        run: node generate.js
-
-      - name: Upload generated files
+      
+      - name: Install Dependencies
+        run: npm install puppeteer
+        
+      - name: Generate A3 PDF & TSV
+        run: node generate.js "${{ inputs.url }}" "${{ inputs.job_id }}"
+        
+      - name: Upload Artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: page-capture-${{ github.run_id }}
+          name: crawler-output-${{ inputs.job_id }}
           path: |
             content_A3.pdf
             links.tsv
-          if-no-files-found: error
-          retention-days: 7
