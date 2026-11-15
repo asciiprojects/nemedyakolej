@@ -66,6 +66,7 @@ async function loadWithRetry(page, url, retries) {
       job_id: JOB_ID,
       url: TARGET_URL,
       outer_text: outerText,
+      inner_html: innerHtml,
       link_count: links.length,
       timestamp: new Date().toISOString()
     };
