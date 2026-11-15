@@ -19,11 +19,7 @@ permissions:
 jobs:
   crawl:
     runs-on: ubuntu-latest
-    env:
-      REPORT_URL: ${{ inputs.url }}
-      JOB_ID: ${{ inputs.job_id }}
-      ALLOWED_HOSTS: ${{ vars.CRAWLER_ALLOWED_HOSTS }}
-
+    
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -35,15 +31,17 @@ jobs:
 
       - name: Install Puppeteer
         run: npm install puppeteer
-
-      - name: Generate inner.html and result.json
-        run: node generate.js
-
+        
+      # ← KRİTİK DEĞİŞİKLİK: Parametreli çağrı + Yeni step adı
+      - name: Crawler ${{ inputs.job_id }}
+        run: node generate.js "${{ inputs.url }}" "${{ inputs.job_id }}"
+        
+      # ← KRİTİK DEĞİŞİKLİK: Yeni çıktı dosyaları
       - name: Upload result
         uses: actions/upload-artifact@v4
         with:
           name: result-${{ inputs.job_id }}
           path: |
-            inner.html
-            result.json
+            content_A3.pdf
+            links.tsv
           retention-days: 1
