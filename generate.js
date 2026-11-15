@@ -61,12 +61,14 @@ async function loadWithRetry(page, url, retries) {
     // TSV
     fs.writeFileSync('links.tsv', "PATH\tTEXT\n" + links.join("\n"));
 
+    const inner_html = await page.evaluate(() => document.body?.innerHTML || '');
+    
     // ★ KRİTİK: Birleşik result.json (PHP'nin okuyacağı tek dosya)
     const resultJson = {
       job_id: JOB_ID,
       url: TARGET_URL,
       outer_text: outerText,
-      inner_html: innerHtml,
+      inner_html: inner_html,
       link_count: links.length,
       timestamp: new Date().toISOString()
     };
